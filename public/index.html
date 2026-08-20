@@ -1,24 +1,38 @@
-// Fetch state from Vercel Postgres
-async function atlasGetState() {
-  try {
-    const res = await fetch('/api/store');
-    if (!res.ok) throw new Error('Fetch failed');
-    return await res.json();
-  } catch (err) {
-    console.warn('Falling back or failed to fetch:', err);
-    return null;
-  }
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Atlas Dashboard</title>
+</head>
+<body>
 
-// Save state to Vercel Postgres
-async function atlasPutState(snapshot) {
-  try {
-    await fetch('/api/store', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(snapshot)
-    });
-  } catch (err) {
-    console.error('Remote save failed:', err);
-  }
-}
+  <!-- Your HTML Dashboard Code Here -->
+
+  <script>
+    // Fetch state from Vercel Postgres
+    async function atlasGetState() {
+      try {
+        const res = await fetch('/api/store');
+        if (!res.ok) throw new Error('Fetch failed');
+        return await res.json();
+      } catch (err) {
+        console.warn('Falling back or failed to fetch:', err);
+        return null;
+      }
+    }
+
+    // Save state to Vercel Postgres
+    async function atlasPutState(snapshot) {
+      try {
+        await fetch('/api/store', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(snapshot)
+        });
+      } catch (err) {
+        console.error('Remote save failed:', err);
+      }
+    }
+  </script>
+</body>
+</html>
