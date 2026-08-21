@@ -4,24 +4,97 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Atlas Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #181b24;
+      --surface-2: #222634;
+      --surface-3: #2c3144;
+      --text: #e6e8ee;
+      --text-faint: #8a8f9e;
+      --line: #2e3346;
+      --brass: #e3b24f;
+      --teal: #5fc9b8;
+      --violet: #9d8ce0;
+      --coral: #e2685c;
+      --blue: #7fb0e3;
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    h2 { margin-top: 0; font-weight: 500; font-size: 1.2rem; }
+    button {
+      background: var(--brass);
+      color: #000;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .task-item {
+      background: var(--surface-2);
+      padding: 10px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+  </style>
 </head>
 <body>
 
+  <div class="grid">
+    <div class="card">
+      <h2>Mindset & Focus</h2>
+      <p id="quoteText">Loading quote...</p>
+      <small id="quoteAuthor" style="color:var(--text-faint);"></small>
+      <div style="margin-top: 12px;">
+        <button onclick="pickRandomQuote()">New Quote</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Active Tasks</h2>
+      <div id="taskList"></div>
+    </div>
+  </div>
+
 <script>
-/* ================= DATABASE STATE PERSISTENCE ================= */
-// Fetch state from Vercel Postgres 
+/* ================= STATE & PERSISTENCE ================= */
+let tasks = [
+  { id: 1, text: 'Finalize Q3 Marketing Strategy', status: 'todo' },
+  { id: 2, text: 'Review Landing Page Wireframes', status: 'doing' }
+];
+
+let quotes = [
+  { text: "Discipline is choosing between what you want now and what you want most.", author: "Unknown" },
+  { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Will Durant" }
+];
+
 async function atlasGetState() { 
   try { 
     const res = await fetch('/api/store'); 
     if (!res.ok) throw new Error('Fetch failed'); 
     return await res.json(); 
   } catch (err) { 
-    console.warn('Falling back or failed to fetch:', err); 
     return null; 
   } 
 } 
 
-// Save state to Vercel Postgres 
 async function atlasPutState(snapshot) { 
   try { 
     await fetch('/api/store', { 
@@ -30,886 +103,42 @@ async function atlasPutState(snapshot) {
       body: JSON.stringify(snapshot) 
     }); 
   } catch (err) { 
-    console.error('Remote save failed:', err); 
+    console.error('Save failed:', err); 
   } 
 }
 
-// Collect current application state and send to database
-async function persistState(reason = '') {
-  const snapshot = {
-    timeBlocksByDate,
-    timeBlocks,
-    plannerView,
-    tasks,
-    quotes,
-    knowledgeData,
-    quranReciters,
-    quranAudioFiles,
-    bizProjects,
-    financeData,
-    lastUpdated: new Date().toISOString()
-  };
-  await atlasPutState(snapshot);
+async function persistState() {
+  await atlasPutState({ tasks, quotes });
 }
 
-// Restore state on app load
 async function restoreAtlasState() {
   const data = await atlasGetState();
   if (data) {
-    if (data.timeBlocksByDate) timeBlocksByDate = data.timeBlocksByDate;
-    if (data.timeBlocks) timeBlocks = data.timeBlocks;
-    if (data.plannerView) plannerView = data.plannerView;
     if (data.tasks) tasks = data.tasks;
     if (data.quotes) quotes = data.quotes;
-    if (data.knowledgeData) knowledgeData = data.knowledgeData;
-    if (data.quranReciters) quranReciters = data.quranReciters;
-    if (data.quranAudioFiles) quranAudioFiles = data.quranAudioFiles;
-    if (data.bizProjects) bizProjects = data.bizProjects;
-    if (data.financeData) financeData = data.financeData;
   }
-
-  // Render modules after loading
-  drawCompass();
-  renderAllClocks();
   renderTasks();
-  renderQuoteCard();
-  renderQuoteList();
-  drawTrendChart();
-  renderKnowledge();
-  renderQuranReciters();
-  renderBizHub();
-  renderFinance();
+  pickRandomQuote();
 }
 
-/* ================= LIFE BALANCE COMPASS (5 axes) ================= */
-const axisConfig = [
-  { name: 'Physical', val: 78, color: 'var(--teal)' },
-  { name: 'Mental', val: 82, color: 'var(--violet)' },
-  { name: 'Business', val: 68, color: 'var(--brass)' },
-  { name: 'Social', val: 75, color: 'var(--coral)' },
-  { name: 'Knowledge', val: 88, color: 'var(--blue)' }
-];
-
-function drawCompass() {
-  const svg = document.getElementById('compassSvg');
-  const legend = document.getElementById('compassLegend');
-  if (!svg) return;
-
-  const cx = 125, cy = 125, r = 85;
-  const numAxes = axisConfig.length;
-  let html = '';
-  let points = [];
-
-  // Concentric grid circles
-  [0.25, 0.5, 0.75, 1].forEach(scale => {
-    html += `<circle cx="${cx}" cy="${cy}" r="${r * scale}" fill="none" stroke="var(--line)" stroke-dasharray="${scale === 1 ? 'none' : '2 2'}" stroke-width="1"/>`;
-  });
-
-  // Axes and data points
-  axisConfig.forEach((axis, i) => {
-    const angle = (i * 2 * Math.PI / numAxes) - (Math.PI / 2);
-    const x = cx + r * Math.cos(angle);
-    const y = cy + r * Math.sin(angle);
-    
-    // Axis line
-    html += `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="var(--line)" stroke-width="1"/>`;
-
-    // Data point
-    const valR = r * (axis.val / 100);
-    const px = cx + valR * Math.cos(angle);
-    const py = cy + valR * Math.sin(angle);
-    points.push(`${px},${py}`);
-  });
-
-  // Data polygon
-  const polyPoints = points.join(' ');
-  html += `<polygon points="${polyPoints}" fill="rgba(227, 178, 79, 0.18)" stroke="var(--brass)" stroke-width="2"/>`;
-
-  // Draw nodes at each vertex
-  axisConfig.forEach((axis, i) => {
-    const [px, py] = points[i].split(',');
-    html += `<circle cx="${px}" cy="${py}" r="4" fill="${axis.color}" stroke="var(--surface)" stroke-width="1.5"/>`;
-  });
-
-  svg.innerHTML = html;
-
-  // Render Legend
-  if (legend) {
-    legend.innerHTML = axisConfig.map(a => `
-      <div class="legend-item">
-        <span class="legend-swatch" style="background:${a.color}"></span>
-        <span>${a.name} (${a.val}%)</span>
-      </div>
-    `).join('');
-  }
-}
-
-/* ================= CIRCULAR TIME PLANNER (SECTOGRAPH) ================= */
-let plannerView = '24h';
-let plannerDateKey = localDateKey(new Date());
-let timeBlocksByDate = {};
-let timeBlocks = [
-  { id: 1, title: 'Deep Work: Coding', start: '09:00', duration: 120, color: '#e3b24f' },
-  { id: 2, title: 'Gym & Recovery', start: '12:00', duration: 90, color: '#5fc9b8' },
-  { id: 3, title: 'Client Sync', start: '14:30', duration: 45, color: '#7fb0e3' },
-  { id: 4, title: 'Strategy & Review', start: '16:00', duration: 60, color: '#9d8ce0' }
-];
-
-function localDateKey(date) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function parseTimeToMins(tStr) {
-  const [h, m] = tStr.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function setPlannerView(v) {
-  plannerView = v;
-  document.getElementById('planner24Btn').classList.toggle('active', v === '24h');
-  document.getElementById('planner12Btn').classList.toggle('active', v === '12h');
-  renderAllClocks();
-  persistState('planner view changed');
-}
-
-function plannerShiftDate(days) {
-  const [y, m, d] = plannerDateKey.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  plannerDateKey = localDateKey(dt);
-  if (!timeBlocksByDate[plannerDateKey]) {
-    timeBlocksByDate[plannerDateKey] = [];
-  }
-  timeBlocks = timeBlocksByDate[plannerDateKey];
-  renderAllClocks();
-  persistState('planner date shifted');
-}
-
-function plannerGoToday() {
-  plannerDateKey = localDateKey(new Date());
-  if (!timeBlocksByDate[plannerDateKey]) {
-    timeBlocksByDate[plannerDateKey] = [];
-  }
-  timeBlocks = timeBlocksByDate[plannerDateKey];
-  renderAllClocks();
-  persistState('planner date reset today');
-}
-
-function timeToAngle(mins, maxMins) {
-  return (mins / maxMins) * 360 - 90;
-}
-
-function polarToCartesian(cx, cy, r, angleInDegrees) {
-  const angleInRadians = (angleInDegrees * Math.PI) / 180.0;
-  return {
-    x: cx + (r * Math.cos(angleInRadians)),
-    y: cy + (r * Math.sin(angleInRadians))
-  };
-}
-
-function describeArc(x, y, radius, startAngle, endAngle) {
-  const start = polarToCartesian(x, y, radius, endAngle);
-  const end = polarToCartesian(x, y, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
-  return [
-    'M', start.x, start.y,
-    'A', radius, radius, 0, largeArcFlag, 0, end.x, end.y
-  ].join(' ');
-}
-
-function describeSector(x, y, innerR, outerR, startAngle, endAngle) {
-  if (endAngle - startAngle >= 359.99) endAngle = startAngle + 359.99;
-  const startOuter = polarToCartesian(x, y, outerR, startAngle);
-  const endOuter = polarToCartesian(x, y, outerR, endAngle);
-  const startInner = polarToCartesian(x, y, innerR, endAngle);
-  const endInner = polarToCartesian(x, y, innerR, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
-
-  return [
-    'M', startOuter.x, startOuter.y,
-    'A', outerR, outerR, 0, largeArcFlag, 1, endOuter.x, endOuter.y,
-    'L', startInner.x, startInner.y,
-    'A', innerR, innerR, 0, largeArcFlag, 0, endInner.x, endInner.y,
-    'Z'
-  ].join(' ');
-}
-
-function drawClockSVG(svgId, isOverview = false) {
-  const svg = document.getElementById(svgId);
-  if (!svg) return;
-
-  const size = isOverview ? 200 : 620;
-  const cx = size / 2, cy = size / 2;
-  const outerR = size * 0.44;
-  const innerR = size * 0.28;
-  const maxMins = plannerView === '12h' ? 720 : 1440;
-
-  let html = '';
-
-  // Dial Background Ring
-  html += `<circle cx="${cx}" cy="${cy}" r="${outerR}" fill="none" stroke="var(--surface-3)" stroke-width="${outerR - innerR}"/>`;
-  html += `<circle cx="${cx}" cy="${cy}" r="${innerR}" fill="var(--surface-2)" stroke="var(--line)" stroke-width="1"/>`;
-  html += `<circle cx="${cx}" cy="${cy}" r="${outerR}" fill="none" stroke="var(--line)" stroke-width="1"/>`;
-
-  // Draw Hour Marks & Labels
-  const hourStep = plannerView === '12h' ? 1 : 2;
-  const totalHours = plannerView === '12h' ? 12 : 24;
-  for (let h = 0; h < totalHours; h += hourStep) {
-    const angle = (h / totalHours) * 360 - 90;
-    const ptInner = polarToCartesian(cx, cy, innerR - 4, angle);
-    const ptOuter = polarToCartesian(cx, cy, innerR - 10, angle);
-    const ptTxt = polarToCartesian(cx, cy, innerR - (isOverview ? 16 : 24), angle);
-
-    html += `<line x1="${ptInner.x}" y1="${ptInner.y}" x2="${ptOuter.x}" y2="${ptOuter.y}" stroke="var(--text-faint)" stroke-width="1.5"/>`;
-    html += `<text x="${ptTxt.x}" y="${ptTxt.y}" fill="var(--text-faint)" font-size="${isOverview ? '8' : '12'}" font-family="JetBrains Mono" text-anchor="middle" dominant-baseline="central">${h}</text>`;
-  }
-
-  // Draw Event Sectors
-  const activeBlocks = isOverview ? (timeBlocksByDate[localDateKey(new Date())] || timeBlocks) : timeBlocks;
-  activeBlocks.forEach(blk => {
-    let startMins = parseTimeToMins(blk.start);
-    if (plannerView === '12h') startMins = startMins % 720;
-
-    let duration = blk.duration;
-    let endMins = startMins + duration;
-    if (endMins > maxMins) endMins = maxMins;
-
-    const startAngle = timeToAngle(startMins, maxMins);
-    const endAngle = timeToAngle(endMins, maxMins);
-
-    if (endAngle > startAngle) {
-      const pathData = describeSector(cx, cy, innerR, outerR, startAngle, endAngle);
-      html += `<path d="${pathData}" fill="${blk.color}" opacity="0.85" stroke="var(--surface)" stroke-width="1.5" class="clock-sector" onclick="openEditBlockModal(${blk.id})" style="cursor:pointer;"><title>${blk.title} (${blk.start})</title></path>`;
-    }
-  });
-
-  // Current Time Pointer Line
-  const now = new Date();
-  const todayKey = localDateKey(now);
-  if (!isOverview || plannerDateKey === todayKey) {
-    let curMins = now.getHours() * 60 + now.getMinutes();
-    if (plannerView === '12h') curMins = curMins % 720;
-
-    const curAngle = timeToAngle(curMins, maxMins);
-    const ptOuter = polarToCartesian(cx, cy, outerR + 6, curAngle);
-    const ptInner = polarToCartesian(cx, cy, innerR - 8, curAngle);
-
-    html += `<line x1="${ptInner.x}" y1="${ptInner.y}" x2="${ptOuter.x}" y2="${ptOuter.y}" stroke="var(--brass)" stroke-width="3" stroke-linecap="round"/>`;
-    html += `<circle cx="${ptOuter.x}" cy="${ptOuter.y}" r="4" fill="var(--brass)"/>`;
-  }
-
-  // Center Text / Indicator
-  html += `<circle cx="${cx}" cy="${cy}" r="${isOverview ? '22' : '48'}" fill="var(--ink)" stroke="var(--line)" stroke-width="1"/>`;
-  if (!isOverview) {
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-    html += `<text x="${cx}" y="${cy - 4}" fill="var(--text)" font-size="18" font-family="Fraunces" font-weight="600" text-anchor="middle" dominant-baseline="central">${timeStr}</text>`;
-    html += `<text x="${cx}" y="${cy + 16}" fill="var(--brass)" font-size="10" font-family="JetBrains Mono" text-anchor="middle" dominant-baseline="central">${plannerView}</text>`;
-  }
-
-  svg.innerHTML = html;
-}
-
-function renderAllClocks() {
-  const dLabel = document.getElementById('plannerDateLabel');
-  if (dLabel) {
-    const today = localDateKey(new Date());
-    dLabel.textContent = plannerDateKey === today ? 'Today' : plannerDateKey;
-  }
-  const aDate = document.getElementById('plannerAgendaDate');
-  if (aDate) aDate.textContent = plannerDateKey;
-
-  drawClockSVG('clockSvgOverview', true);
-  drawClockSVG('clockSvgTasks', false);
-  updatePlannerSidebar();
-}
-
-function updatePlannerSidebar() {
-  const eventList = document.getElementById('plannerEventList');
-  if (!eventList) return;
-
-  if (!timeBlocks.length) {
-    eventList.innerHTML = `<div class="planner-empty">No time blocks scheduled for this day.</div>`;
-  } else {
-    timeBlocks.sort((a, b) => parseTimeToMins(a.start) - parseTimeToMins(b.start));
-    eventList.innerHTML = timeBlocks.map(b => `
-      <div class="planner-event" onclick="openEditBlockModal(${b.id})">
-        <div class="planner-event-dot" style="background:${b.color}"></div>
-        <div>
-          <div class="planner-event-title">${b.title}</div>
-          <div class="planner-event-time">${b.start} (${b.duration} mins)</div>
-        </div>
-        <div class="planner-event-duration">Edit</div>
-      </div>
-    `).join('');
-  }
-
-  // Calculate planned time
-  const totalMins = timeBlocks.reduce((acc, b) => acc + Number(b.duration), 0);
-  const plannedEl = document.getElementById('plannerPlanned');
-  if (plannedEl) plannedEl.textContent = `${(totalMins / 60).toFixed(1)}h`;
-
-  const countEl = document.getElementById('plannerBlockCount');
-  if (countEl) countEl.textContent = timeBlocks.length;
-
-  // Calculate current block & next block
-  const now = new Date();
-  const curMins = now.getHours() * 60 + now.getMinutes();
-  const todayKey = localDateKey(now);
-
-  let curBlock = null;
-  let nextBlock = null;
-
-  if (plannerDateKey === todayKey) {
-    timeBlocks.forEach(b => {
-      const start = parseTimeToMins(b.start);
-      const end = start + Number(b.duration);
-      if (curMins >= start && curMins < end) curBlock = b;
-      if (start > curMins && (!nextBlock || start < parseTimeToMins(nextBlock.start))) nextBlock = b;
-    });
-  }
-
-  const curTitle = document.getElementById('plannerCurrentTitle');
-  const curMeta = document.getElementById('plannerCurrentMeta');
-  if (curTitle && curMeta) {
-    if (curBlock) {
-      curTitle.textContent = curBlock.title;
-      curMeta.textContent = `Started at ${curBlock.start} · ${curBlock.duration} mins`;
-    } else {
-      curTitle.textContent = 'No active block';
-      curMeta.textContent = plannerDateKey === todayKey ? 'You are currently in free time.' : 'Viewing schedule for ' + plannerDateKey;
-    }
-  }
-
-  const nextTitle = document.getElementById('plannerNextTitle');
-  const nextMeta = document.getElementById('plannerNextMeta');
-  if (nextTitle && nextMeta) {
-    if (nextBlock) {
-      nextTitle.textContent = nextBlock.title;
-      nextMeta.textContent = `Starts at ${nextBlock.start}`;
-    } else {
-      nextTitle.textContent = '—';
-      nextMeta.textContent = 'No upcoming block today';
-    }
-  }
-
-  const freeTimeEl = document.getElementById('plannerFreeTime');
-  if (freeTimeEl) {
-    const freeMins = 1440 - totalMins;
-    freeTimeEl.textContent = `${(freeMins / 60).toFixed(1)}h`;
-  }
-}
-
-// Color Selector for Planner
-const plannerColors = ['#e3b24f', '#5fc9b8', '#7fb0e3', '#9d8ce0', '#e2685c', '#edeef2'];
-let selectedBlockColor = plannerColors[0];
-
-function renderBlockColorRow() {
-  const row = document.getElementById('blockColorRow');
-  if (!row) return;
-  row.innerHTML = plannerColors.map(c => `
-    <div class="planner-color ${c === selectedBlockColor ? 'selected' : ''}" style="background:${c}" onclick="selectBlockColor('${c}')"></div>
-  `).join('');
-}
-
-function selectBlockColor(c) {
-  selectedBlockColor = c;
-  renderBlockColorRow();
-}
-
-function addTimeBlock() {
-  const title = document.getElementById('blockTitle').value.trim();
-  const start = document.getElementById('blockStart').value;
-  const duration = parseInt(document.getElementById('blockDuration').value, 10);
-
-  if (!title) return alert('Please enter a title for the time block.');
-
-  const newBlock = {
-    id: Date.now(),
-    title,
-    start,
-    duration,
-    color: selectedBlockColor
-  };
-
-  timeBlocks.push(newBlock);
-  if (!timeBlocksByDate[plannerDateKey]) timeBlocksByDate[plannerDateKey] = timeBlocks;
-
-  document.getElementById('blockTitle').value = '';
-  renderAllClocks();
-  persistState('added time block');
-}
-
-function openEditBlockModal(id) {
-  const block = timeBlocks.find(b => b.id === id);
-  if (!block) return;
-  if (confirm(`Delete time block "${block.title}"?`)) {
-    timeBlocks = timeBlocks.filter(b => b.id !== id);
-    timeBlocksByDate[plannerDateKey] = timeBlocks;
-    renderAllClocks();
-    persistState('deleted time block');
-  }
-}
-
-/* ================= TASKS MANAGEMENT ================= */
-let tasks = [
-  { id: 1, text: 'Finalize Q3 Marketing Strategy', status: 'todo', assignee: 'Mahdy', deadline: '2026-08-25', eisen: 'q1' },
-  { id: 2, text: 'Review Landing Page Wireframes', status: 'doing', assignee: 'Sarah', deadline: '2026-08-22', eisen: 'q2' },
-  { id: 3, text: 'Audit Infrastructure Costs', status: 'done', assignee: 'Mahdy', deadline: '2026-08-18', eisen: 'q3' }
-];
-
+/* ================= COMPONENT RENDERING ================= */
 function renderTasks() {
-  const cols = { todo: document.getElementById('col-todo'), doing: document.getElementById('col-doing'), done: document.getElementById('col-done') };
-  if (!cols.todo) return;
-
-  Object.keys(cols).forEach(k => cols[k].innerHTML = '');
-
-  const counts = { todo: 0, doing: 0, done: 0 };
-
-  tasks.forEach(task => {
-    counts[task.status]++;
-    const item = document.createElement('div');
-    item.className = `task-item ${task.status === 'done' ? 'done' : ''}`;
-    item.innerHTML = `
-      <div class="txt">${task.text}</div>
-      <div class="task-meta-row">
-        <span class="task-badge eisen-${task.eisen}">${task.eisen.toUpperCase()}</span>
-        ${task.assignee ? `<span>👤 ${task.assignee}</span>` : ''}
-        ${task.deadline ? `<span>📅 ${task.deadline}</span>` : ''}
-      </div>
-      <div class="task-actions">
-        ${task.status !== 'todo' ? `<button class="action-btn" onclick="moveTask(${task.id}, 'todo')">To Do</button>` : ''}
-        ${task.status !== 'doing' ? `<button class="action-btn" onclick="moveTask(${task.id}, 'doing')">In Progress</button>` : ''}
-        ${task.status !== 'done' ? `<button class="action-btn" onclick="moveTask(${task.id}, 'done')">Done</button>` : ''}
-        <button class="action-btn del" onclick="deleteTask(${task.id})">✕</button>
-      </div>
-    `;
-    cols[task.status].appendChild(item);
-  });
-
-  document.getElementById('count-todo').textContent = counts.todo;
-  document.getElementById('count-doing').textContent = counts.doing;
-  document.getElementById('count-done').textContent = counts.done;
-}
-
-function addTask() {
-  const input = document.getElementById('newTaskInput');
-  const text = input.value.trim();
-  if (!text) return;
-
-  tasks.push({
-    id: Date.now(),
-    text,
-    status: 'todo',
-    assignee: document.getElementById('newTaskAssignee').value.trim(),
-    deadline: document.getElementById('newTaskDeadline').value,
-    eisen: document.getElementById('newTaskEisen').value
-  });
-
-  input.value = '';
-  document.getElementById('newTaskAssignee').value = '';
-  document.getElementById('newTaskDeadline').value = '';
-  renderTasks();
-  persistState('task added');
-}
-
-function moveTask(id, newStatus) {
-  const task = tasks.find(t => t.id === id);
-  if (task) {
-    task.status = newStatus;
-    renderTasks();
-    persistState('task moved');
-  }
-}
-
-function deleteTask(id) {
-  tasks = tasks.filter(t => t.id !== id);
-  renderTasks();
-  persistState('task deleted');
-}
-
-/* ================= MINDSET & QUOTES ================= */
-let quotes = [
-  { text: "Discipline is choosing between what you want now and what you want most.", author: "Unknown" },
-  { text: "We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author: "Will Durant" },
-  { text: "It is not that we have a short time to live, but that we waste a lot of it.", author: "Seneca" }
-];
-let currentQuoteIndex = 0;
-
-function renderQuoteCard() {
-  const q = quotes[currentQuoteIndex] || quotes[0];
-  if (!q) return;
-  const txtEl = document.getElementById('quoteText');
-  const authEl = document.getElementById('quoteAuthor');
-  if (txtEl) txtEl.textContent = `"${q.text}"`;
-  if (authEl) authEl.textContent = `— ${q.author || 'Anonymous'}`;
+  const container = document.getElementById('taskList');
+  if (!container) return;
+  container.innerHTML = tasks.map(t => `
+    <div class="task-item">
+      <span>${t.text}</span>
+    </div>
+  `).join('');
 }
 
 function pickRandomQuote() {
-  currentQuoteIndex = Math.floor(Math.random() * quotes.length);
-  renderQuoteCard();
+  const q = quotes[Math.floor(Math.random() * quotes.length)];
+  document.getElementById('quoteText').textContent = `"${q.text}"`;
+  document.getElementById('quoteAuthor').textContent = `— ${q.author}`;
 }
 
-function renderQuoteList() {
-  const container = document.getElementById('quoteList');
-  if (!container) return;
-  container.innerHTML = quotes.map((q, idx) => `
-    <div class="quote-list-item">
-      <div class="qt"><b>${q.author}:</b> "${q.text}"</div>
-      <button class="action-btn del" onclick="deleteQuote(${idx})">Delete</button>
-    </div>
-  `).join('');
-}
-
-function addQuote() {
-  const text = document.getElementById('newQuoteText').value.trim();
-  const author = document.getElementById('newQuoteAuthor').value.trim();
-  if (!text) return;
-
-  quotes.push({ text, author: author || 'Unknown' });
-  document.getElementById('newQuoteText').value = '';
-  document.getElementById('newQuoteAuthor').value = '';
-  renderQuoteList();
-  persistState('added quote');
-}
-
-function deleteQuote(idx) {
-  quotes.splice(idx, 1);
-  if (currentQuoteIndex >= quotes.length) currentQuoteIndex = 0;
-  renderQuoteCard();
-  renderQuoteList();
-  persistState('deleted quote');
-}
-
-/* ================= TREND & EXECUTION CHART ================= */
-function drawTrendChart() {
-  const svg = document.getElementById('trendSvg');
-  if (!svg) return;
-
-  const width = 900, height = 260, padding = 40;
-  const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-  const dataPlan = [70, 75, 80, 85, 80, 60, 50];
-  const dataExec = [65, 70, 82, 78, 85, 55, 60];
-  const dataResults = [60, 68, 75, 80, 82, 65, 65];
-
-  function getCoords(data) {
-    return data.map((val, idx) => {
-      const x = padding + (idx / (days.length - 1)) * (width - 2 * padding);
-      const y = height - padding - (val / 100) * (height - 2 * padding);
-      return { x, y };
-    });
-  }
-
-  function pointsToPath(pts) {
-    return pts.reduce((acc, pt, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${pt.x} ${pt.y}`, '');
-  }
-
-  const ptsPlan = getCoords(dataPlan);
-  const ptsExec = getCoords(dataExec);
-  const ptsResults = getCoords(dataResults);
-
-  let html = '';
-
-  for (let p = 0; p <= 100; p += 25) {
-    const y = height - padding - (p / 100) * (height - 2 * padding);
-    html += `<line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="var(--line)" stroke-dasharray="3 3"/>`;
-  }
-
-  html += `<path d="${pointsToPath(ptsPlan)}" fill="none" stroke="var(--blue)" stroke-width="2.5"/>`;
-  html += `<path d="${pointsToPath(ptsExec)}" fill="none" stroke="var(--teal)" stroke-width="2.5"/>`;
-  html += `<path d="${pointsToPath(ptsResults)}" fill="none" stroke="var(--brass)" stroke-width="2.5"/>`;
-
-  ptsPlan.forEach((pt, i) => {
-    html += `<text x="${pt.x}" y="${height - 10}" fill="var(--text-faint)" font-size="11" font-family="JetBrains Mono" text-anchor="middle">${days[i]}</text>`;
-  });
-
-  svg.innerHTML = html;
-}
-
-/* ================= KNOWLEDGE GALLERY ================= */
-let knowledgeData = [
-  { id: 1, title: 'Atomic Habits', category: 'books', image: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400', tags: ['Self-Improvement'], status: 'Reading', progress: 65 },
-  { id: 2, title: 'Deep Work: Rules for Focused Success', category: 'books', image: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=400', tags: ['Productivity'], status: 'Completed', progress: 100 },
-  { id: 3, title: 'Fullstack Web Development Bootcamp', category: 'courses', image: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=400', tags: ['Engineering'], status: 'In Progress', progress: 40 }
-];
-let tagOptions = ['Self-Improvement', 'Productivity', 'Engineering', 'Finance'];
-let statusOptions = ['To Read', 'Reading', 'In Progress', 'Completed'];
-
-function renderKnowledge(filter = 'all') {
-  const grid = document.getElementById('knowledgeGrid');
-  if (!grid) return;
-
-  const items = filter === 'all' ? knowledgeData : knowledgeData.filter(k => k.category === filter);
-
-  grid.innerHTML = items.map(item => `
-    <div class="knowledge-card">
-      <div class="card-cover" style="background-image: url('${item.image || ''}')"></div>
-      <div class="card-body">
-        <div class="card-title-text">${item.title}</div>
-        <div class="card-tags">
-          ${item.tags.map(t => `<span class="tag">${t}</span>`).join('')}
-        </div>
-        <div class="status-label">${item.status}</div>
-        <div class="card-footer-bar">
-          <div class="mini-bar"><i style="width: ${item.progress}%"></i></div>
-        </div>
-      </div>
-      <div class="card-overlay-actions">
-        <button class="icon-btn" onclick="deleteKnowledgeItem(${item.id})">✕</button>
-      </div>
-    </div>
-  `).join('');
-}
-
-function filterKnowledge(category, btn) {
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderKnowledge(category);
-}
-
-function openKnowledgeModal() {
-  document.getElementById('kModal').classList.add('active');
-}
-
-function closeKnowledgeModal() {
-  document.getElementById('kModal').classList.remove('active');
-}
-
-function saveKnowledgeItem() {
-  const title = document.getElementById('kTitle').value.trim();
-  const category = document.getElementById('kCategory').value;
-  const image = document.getElementById('kImage').value.trim();
-  const progress = parseInt(document.getElementById('kProgress').value, 10) || 0;
-
-  if (!title) return alert('Please enter a title');
-
-  knowledgeData.push({
-    id: Date.now(),
-    title,
-    category,
-    image,
-    tags: ['General'],
-    status: progress === 100 ? 'Completed' : 'In Progress',
-    progress
-  });
-
-  closeKnowledgeModal();
-  renderKnowledge();
-  persistState('knowledge item added');
-}
-
-function deleteKnowledgeItem(id) {
-  knowledgeData = knowledgeData.filter(k => k.id !== id);
-  renderKnowledge();
-  persistState('knowledge item deleted');
-}
-
-/* ================= QURAN MODULE ================= */
-let quranReciters = [
-  { id: 1, name: 'Yasser Al-Dosari', image: 'img/1.png' },
-  { id: 2, name: 'Mishary Rashid Alafasy', image: 'img/2.png' },
-  { id: 3, name: 'Abdul Rahman Al-Sudais', image: 'img/3.png' }
-];
-let quranAudioFiles = {};
-
-function renderQuranReciters() {
-  const grid = document.getElementById('quranReciterGrid');
-  if (!grid) return;
-
-  grid.innerHTML = quranReciters.map(r => `
-    <div class="quran-reciter-card" onclick="openQuranDetail(${r.id})">
-      <div class="quran-reciter-photo-wrap">
-        <img class="quran-reciter-photo" src="${r.image}" alt="${r.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-        <div class="quran-reciter-fallback" style="display:none;">${r.name.charAt(0)}</div>
-      </div>
-      <div class="quran-reciter-info">
-        <div class="quran-reciter-name">${r.name}</div>
-        <div class="quran-reciter-meta">114 Surahs</div>
-      </div>
-    </div>
-  `).join('');
-}
-
-function openQuranDetail(reciterId) {
-  const reciter = quranReciters.find(r => r.id === reciterId);
-  if (!reciter) return;
-
-  document.getElementById('quranHubView').style.display = 'none';
-  const detailView = document.getElementById('quranDetailView');
-  detailView.style.display = 'block';
-
-  detailView.innerHTML = `
-    <div class="quran-detail-head">
-      <button class="back-btn" onclick="closeQuranDetail()">← Back to reciters</button>
-      <img class="quran-detail-photo" src="${reciter.image}" alt="${reciter.name}">
-      <div>
-        <div class="quran-detail-title">${reciter.name}</div>
-        <div class="quran-detail-sub">Full Recitation Audio Player</div>
-      </div>
-    </div>
-    <div class="quran-surah-list">
-      <div class="quran-surah-row">
-        <div class="quran-surah-no">001</div>
-        <div>
-          <div class="quran-surah-name">Al-Fatihah</div>
-          <div class="quran-surah-ar">الفاتحة</div>
-        </div>
-        <div class="quran-audio-area">
-          <audio controls src="${quranAudioFiles[`${reciter.id}_1`] || ''}"></audio>
-          <input class="quran-audio-input" placeholder="Filename / URL..." id="audio_input_${reciter.id}_1" value="${quranAudioFiles[`${reciter.id}_1`] || ''}">
-          <button class="action-btn quran-save-audio" onclick="saveQuranAudio(${reciter.id}, 1)">Save</button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function closeQuranDetail() {
-  document.getElementById('quranHubView').style.display = 'block';
-  document.getElementById('quranDetailView').style.display = 'none';
-}
-
-function saveQuranAudio(reciterId, surahNo) {
-  const val = document.getElementById(`audio_input_${reciterId}_${surahNo}`).value.trim();
-  quranAudioFiles[`${reciterId}_${surahNo}`] = val;
-  openQuranDetail(reciterId);
-  persistState('saved quran audio path');
-}
-
-function openQuranReciterModal() {
-  document.getElementById('quranReciterModal').classList.add('active');
-}
-
-function closeQuranReciterModal() {
-  document.getElementById('quranReciterModal').classList.remove('active');
-}
-
-function saveQuranReciter() {
-  const name = document.getElementById('qrName').value.trim();
-  const image = document.getElementById('qrImage').value.trim();
-
-  if (!name) return alert('Please enter reciter name');
-
-  quranReciters.push({
-    id: Date.now(),
-    name,
-    image: image || 'img/1.png'
-  });
-
-  closeQuranReciterModal();
-  renderQuranReciters();
-  persistState('added quran reciter');
-}
-
-/* ================= BUSINESS MODULE ================= */
-let bizProjects = [
-  { id: 1, name: 'AbtalQuest', category: 'Startup', icon: '⚔️', stage: 'Growth', revenue: '3,200 MAD', users: '1,240 active', progress: 65 },
-  { id: 2, name: 'Atlas Studio', category: 'Agency', icon: '🎨', stage: 'MVP', revenue: '12,000 MAD', users: '4 clients', progress: 40 }
-];
-
-function renderBizHub() {
-  const grid = document.getElementById('bizGrid');
-  if (!grid) return;
-
-  grid.innerHTML = bizProjects.map(p => `
-    <div class="biz-card">
-      <div class="biz-card-top">
-        <div class="biz-icon" style="background:var(--surface-2); border:1px solid var(--line);">${p.icon}</div>
-        <div>
-          <h3>${p.name}</h3>
-          <span class="stage">${p.stage} · ${p.category}</span>
-        </div>
-      </div>
-      <div class="biz-kpi-mini"><span>Monthly Revenue:</span><b>${p.revenue}</b></div>
-      <div class="biz-kpi-mini"><span>Traction:</span><b>${p.users}</b></div>
-      <div class="bar-track" style="margin-top:10px;"><div class="bar-fill" style="width:${p.progress}%"></div></div>
-    </div>
-  `).join('') + `
-    <div class="biz-add-card" onclick="openBizModal()">+ Add New Venture</div>
-  `;
-}
-
-function openBizModal() {
-  document.getElementById('bizModal').classList.add('active');
-}
-
-function closeBizModal() {
-  document.getElementById('bizModal').classList.remove('active');
-}
-
-function saveBizProject() {
-  const name = document.getElementById('bzName').value.trim();
-  if (!name) return alert('Please enter venture name');
-
-  bizProjects.push({
-    id: Date.now(),
-    name,
-    category: 'General',
-    icon: document.getElementById('bzIcon').value || '💼',
-    stage: document.getElementById('bzStage').value || 'Idea',
-    revenue: document.getElementById('bzRevenue').value || '0 MAD',
-    users: document.getElementById('bzUsers').value || '0',
-    progress: parseInt(document.getElementById('bzProgress').value, 10) || 0
-  });
-
-  closeBizModal();
-  renderBizHub();
-  persistState('added business venture');
-}
-
-/* ================= FINANCE OS ================= */
-let financeData = {
-  currency: 'MAD',
-  income: 25000,
-  expenses: 12000,
-  netWorth: 128500
-};
-
-function renderFinance() {
-  const container = document.getElementById('finKpis');
-  if (!container) return;
-
-  container.innerHTML = `
-    <div class="fin-kpi"><div class="label">Monthly Income</div><div class="value">${financeData.income.toLocaleString()} ${financeData.currency}</div></div>
-    <div class="fin-kpi"><div class="label">Monthly Expenses</div><div class="value">${financeData.expenses.toLocaleString()} ${financeData.currency}</div></div>
-    <div class="fin-kpi"><div class="label">Net Savings</div><div class="value">${(financeData.income - financeData.expenses).toLocaleString()} ${financeData.currency}</div></div>
-    <div class="fin-kpi"><div class="label">Net Worth</div><div class="value">${financeData.netWorth.toLocaleString()} ${financeData.currency}</div></div>
-  `;
-}
-
-function openFinanceSettings() {
-  document.getElementById('financeSettingsModal').classList.add('active');
-}
-
-function closeFinanceSettings() {
-  document.getElementById('financeSettingsModal').classList.remove('active');
-}
-
-function saveFinanceSettings() {
-  financeData.currency = document.getElementById('fsCurrency').value || 'MAD';
-  closeFinanceSettings();
-  renderFinance();
-  persistState('finance settings updated');
-}
-
-function openFinanceModal() {
-  document.getElementById('financeModal').classList.add('active');
-}
-
-function closeFinanceModal() {
-  document.getElementById('financeModal').classList.remove('active');
-}
-
-function saveFinanceModal() {
-  closeFinanceModal();
-  persistState('finance transaction saved');
-}
-
-/* ================= INITIALIZATION ================= */
-window.addEventListener('DOMContentLoaded', () => {
-  restoreAtlasState();
-});
+window.addEventListener('DOMContentLoaded', restoreAtlasState);
 </script>
 </body>
 </html>
