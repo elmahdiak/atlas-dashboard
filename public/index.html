@@ -6,7 +6,81 @@
   <title>Atlas Dashboard</title>
 </head>
 <body>
+
 <script>
+/* ================= DATABASE STATE PERSISTENCE ================= */
+// Fetch state from Vercel Postgres 
+async function atlasGetState() { 
+  try { 
+    const res = await fetch('/api/store'); 
+    if (!res.ok) throw new Error('Fetch failed'); 
+    return await res.json(); 
+  } catch (err) { 
+    console.warn('Falling back or failed to fetch:', err); 
+    return null; 
+  } 
+} 
+
+// Save state to Vercel Postgres 
+async function atlasPutState(snapshot) { 
+  try { 
+    await fetch('/api/store', { 
+      method: 'POST', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify(snapshot) 
+    }); 
+  } catch (err) { 
+    console.error('Remote save failed:', err); 
+  } 
+}
+
+// Collect current application state and send to database
+async function persistState(reason = '') {
+  const snapshot = {
+    timeBlocksByDate,
+    timeBlocks,
+    plannerView,
+    tasks,
+    quotes,
+    knowledgeData,
+    quranReciters,
+    quranAudioFiles,
+    bizProjects,
+    financeData,
+    lastUpdated: new Date().toISOString()
+  };
+  await atlasPutState(snapshot);
+}
+
+// Restore state on app load
+async function restoreAtlasState() {
+  const data = await atlasGetState();
+  if (data) {
+    if (data.timeBlocksByDate) timeBlocksByDate = data.timeBlocksByDate;
+    if (data.timeBlocks) timeBlocks = data.timeBlocks;
+    if (data.plannerView) plannerView = data.plannerView;
+    if (data.tasks) tasks = data.tasks;
+    if (data.quotes) quotes = data.quotes;
+    if (data.knowledgeData) knowledgeData = data.knowledgeData;
+    if (data.quranReciters) quranReciters = data.quranReciters;
+    if (data.quranAudioFiles) quranAudioFiles = data.quranAudioFiles;
+    if (data.bizProjects) bizProjects = data.bizProjects;
+    if (data.financeData) financeData = data.financeData;
+  }
+
+  // Render modules after loading
+  drawCompass();
+  renderAllClocks();
+  renderTasks();
+  renderQuoteCard();
+  renderQuoteList();
+  drawTrendChart();
+  renderKnowledge();
+  renderQuranReciters();
+  renderBizHub();
+  renderFinance();
+}
+
 /* ================= LIFE BALANCE COMPASS (5 axes) ================= */
 const axisConfig = [
   { name: 'Physical', val: 78, color: 'var(--teal)' },
@@ -69,7 +143,6 @@ function drawCompass() {
     `).join('');
   }
 }
-drawCompass();
 
 /* ================= CIRCULAR TIME PLANNER (SECTOGRAPH) ================= */
 let plannerView = '24h';
@@ -146,7 +219,6 @@ function describeArc(x, y, radius, startAngle, endAngle) {
 }
 
 function describeSector(x, y, innerR, outerR, startAngle, endAngle) {
-  // Ensure we don't draw a exact 360 sector cleanly without edge glitches
   if (endAngle - startAngle >= 359.99) endAngle = startAngle + 359.99;
   const startOuter = polarToCartesian(x, y, outerR, startAngle);
   const endOuter = polarToCartesian(x, y, outerR, endAngle);
@@ -517,7 +589,6 @@ function drawTrendChart() {
   const width = 900, height = 260, padding = 40;
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-  // Sample trend data points (scale 0-100)
   const dataPlan = [70, 75, 80, 85, 80, 60, 50];
   const dataExec = [65, 70, 82, 78, 85, 55, 60];
   const dataResults = [60, 68, 75, 80, 82, 65, 65];
@@ -540,18 +611,15 @@ function drawTrendChart() {
 
   let html = '';
 
-  // Grid Lines
   for (let p = 0; p <= 100; p += 25) {
     const y = height - padding - (p / 100) * (height - 2 * padding);
     html += `<line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="var(--line)" stroke-dasharray="3 3"/>`;
   }
 
-  // Paths
   html += `<path d="${pointsToPath(ptsPlan)}" fill="none" stroke="var(--blue)" stroke-width="2.5"/>`;
   html += `<path d="${pointsToPath(ptsExec)}" fill="none" stroke="var(--teal)" stroke-width="2.5"/>`;
   html += `<path d="${pointsToPath(ptsResults)}" fill="none" stroke="var(--brass)" stroke-width="2.5"/>`;
 
-  // X Axis Labels
   ptsPlan.forEach((pt, i) => {
     html += `<text x="${pt.x}" y="${height - 10}" fill="var(--text-faint)" font-size="11" font-family="JetBrains Mono" text-anchor="middle">${days[i]}</text>`;
   });
